@@ -50,8 +50,12 @@ extension RunnerTests {
       .flatMap { $0.buttons.allElementsBoundByIndex }
     if let back = buttons.first(where: { $0.isHittable }) {
       // `isHittable` promises a hittable point, not a hittable center: a bar button partly under an
-      // overlay keeps the element tap, which aims at the point XCTest computed.
-      back.tap()
+      // overlay keeps the element tap, which aims at the point XCTest computed. `isHittable` is the
+      // gate the dropped pre-event wait would repeat; the post-event wait stays, so `back` still
+      // returns once the pop it started has settled (#2546).
+      withBoundedInteractionIdleTimeoutIfSupported(app, waits: .preEventSkipped) {
+        back.tap()
+      }
       return .performed
     }
     if navigationRejectedQueryCount() != rejectedQueriesBefore
