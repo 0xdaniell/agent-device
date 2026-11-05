@@ -210,10 +210,34 @@ extension RunnerTests {
   ) -> [ResolvedTextEntryInput] {
     // Each match keeps the place the per-type queries gave it (type, then search root, then tree
     // order), so the size ranking below breaks ties exactly as one query per type and root did.
+    if adLaneBase("D") {
+      // MEASUREMENT ONLY: upstream main's loop, one query per input type and root.
+      var baseInputs: [ResolvedTextEntryInput] = []
+      for type in Self.textInputProbeTypes {
+        for query in queries {
+          if shouldStop() { break }
+          let tq = ProcessInfo.processInfo.systemUptime
+          let listed = query.byType[type]!.allElementsBoundByIndex
+          adLaneMark("probeQuery.base n=\(listed.count)", tq)
+          for element in listed {
+            if shouldStop() { break }
+            guard let candidate = ResolvedTextEntryInput(readingListed: element, contentTranslation: contentTranslation) else { continue }
+            let frame = candidate.frameOnScreen ?? candidate.element.frame
+            if isCoordinateTextInputCandidate(enabled: candidate.attributes.isEnabled, frame: frame, point: point) {
+              baseInputs.append(candidate)
+            }
+          }
+        }
+      }
+      guard !shouldStop() else { return [] }
+      return baseInputs.sorted { smallestElementFirst($0.attributes, $1.attributes) }
+    }
     var inputs: [(place: [Int], input: ResolvedTextEntryInput)] = []
     for (rootRank, query) in queries.enumerated() {
       if shouldStop() { break }
+      let tq = ProcessInfo.processInfo.systemUptime
       let candidates = query.listing.allElementsBoundByIndex
+      adLaneMark("probeQuery.cand n=\(candidates.count)", tq)
 #if AGENT_DEVICE_RUNNER_UNIT_TESTS
       if let issue = textInputProbeIssueForTesting {
         textInputProbeIssueForTesting = nil
