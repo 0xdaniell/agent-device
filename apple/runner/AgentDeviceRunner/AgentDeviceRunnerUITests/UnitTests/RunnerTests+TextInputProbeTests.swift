@@ -267,7 +267,7 @@ extension RunnerTests {
         XCTAssertEqual(input.attributes.identifier, reference.snapshot.identifier)
         XCTAssertEqual(input.attributes.frame, reference.snapshot.frame)
         let bound = app.descendants(matching: reference.type).element(boundBy: reference.index)
-        XCTAssertEqual(input.element.debugDescription, bound.debugDescription, "handle under \(point)")
+        XCTAssertEqual(queryChain(of: input.element), queryChain(of: bound), "handle under \(point)")
       }
     }
   }
@@ -275,6 +275,15 @@ extension RunnerTests {
 }
 
 #if AGENT_DEVICE_RUNNER_UNIT_TESTS && os(iOS)
+/// The "Find:" steps of a handle's query chain: how XCTest re-resolves it, without the resolved
+/// elements' addresses.
+private func queryChain(of element: XCUIElement) -> [String] {
+  element.debugDescription
+    .split(separator: "\n")
+    .map { $0.trimmingCharacters(in: .whitespaces) }
+    .filter { $0.contains("Find:") }
+}
+
 private final class ProbeThreadResult: @unchecked Sendable {
   var contained = false
 }
