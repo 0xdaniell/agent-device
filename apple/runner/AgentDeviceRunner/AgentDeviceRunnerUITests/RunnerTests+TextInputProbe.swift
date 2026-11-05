@@ -179,42 +179,70 @@ extension RunnerTests {
     return true
   }
 
+  static let textInputProbeTypes: [XCUIElement.ElementType] = [.textField, .secureTextField, .searchField, .textView]
+
+  /// One search root's input queries: `listing` reads every input type in one tree read, and
+  /// `byType` names the per-type query each listed input's handle is bound to.
+  struct TextInputQuery {
+    let listing: XCUIElementQuery
+    let byType: [XCUIElement.ElementType: XCUIElementQuery]
+  }
+
   /// Resolved before the probe's issue containment, so a lit-panel refusal is not read as no input.
-  private func textInputQueries(app: XCUIApplication) throws -> [XCUIElementQuery] {
-    let inputTypes: [XCUIElement.ElementType] = [.textField, .secureTextField, .searchField, .textView]
-    return try inputTypes.flatMap { try elementQueries(app: app, matching: $0) }
+  private func textInputQueries(app: XCUIApplication) throws -> [TextInputQuery] {
+    let typePredicate = NSPredicate(
+      format: "elementType IN %@",
+      Self.textInputProbeTypes.map { NSNumber(value: $0.rawValue) }
+    )
+    return try elementSearchRoots(root: app, litDisplayID: requestLitPanel?.displayID).map { root in
+      TextInputQuery(
+        listing: root.descendants(matching: .any).matching(typePredicate),
+        byType: Dictionary(uniqueKeysWithValues: Self.textInputProbeTypes.map { ($0, root.descendants(matching: $0)) })
+      )
+    }
   }
 
   private func queryTextInputs(
-    queries: [XCUIElementQuery],
+    queries: [TextInputQuery],
     point: CGPoint,
     contentTranslation: TextEntryContentTranslation,
     shouldStop: () -> Bool
   ) -> [ResolvedTextEntryInput] {
-    var inputs: [ResolvedTextEntryInput] = []
-    for query in queries {
+    // Each match keeps the place the per-type queries gave it (type, then search root, then tree
+    // order), so the size ranking below breaks ties exactly as one query per type and root did.
+    var inputs: [(place: [Int], input: ResolvedTextEntryInput)] = []
+    for (rootRank, query) in queries.enumerated() {
       if shouldStop() { break }
-      let tq = ProcessInfo.processInfo.systemUptime
-      let candidates = query.allElementsBoundByIndex
-      adLaneMark("probeQuery n=\(candidates.count)", tq)
+      let candidates = query.listing.allElementsBoundByIndex
 #if AGENT_DEVICE_RUNNER_UNIT_TESTS
       if let issue = textInputProbeIssueForTesting {
         textInputProbeIssueForTesting = nil
         record(issue)
       }
 #endif
+      var seenOfType: [XCUIElement.ElementType: Int] = [:]
       for element in candidates {
         if shouldStop() { break }
-        guard let candidate = ResolvedTextEntryInput(readingListed: element, contentTranslation: contentTranslation) else { continue }
+        guard let listed = ResolvedTextEntryInput(readingListed: element, contentTranslation: contentTranslation) else { continue }
+        let type = listed.attributes.elementType
+        guard let typeRank = Self.textInputProbeTypes.firstIndex(of: type), let typeQuery = query.byType[type] else { continue }
+        let typeIndex = seenOfType[type, default: 0]
+        seenOfType[type] = typeIndex + 1
+        // The handle is the one the per-type query binds, so a later read of the input (a tap
+        // witness, a fill) re-resolves through the same query and index as before.
+        let candidate = listed.rebound(to: typeQuery.element(boundBy: typeIndex))
         // Matching dispatches nothing, so a read with no screen box compares its live frame.
         let frame = candidate.frameOnScreen ?? candidate.element.frame
         if isCoordinateTextInputCandidate(enabled: candidate.attributes.isEnabled, frame: frame, point: point) {
-          inputs.append(candidate)
+          inputs.append(([typeRank, rootRank, typeIndex], candidate))
         }
       }
     }
     guard !shouldStop() else { return [] }
-    return inputs.sorted { smallestElementFirst($0.attributes, $1.attributes) }
+    return inputs
+      .sorted { $0.place.lexicographicallyPrecedes($1.place) }
+      .map(\.input)
+      .sorted { smallestElementFirst($0.attributes, $1.attributes) }
   }
 
   /// The command's one content-vector read: the resolved window's screen origin when it is placed off

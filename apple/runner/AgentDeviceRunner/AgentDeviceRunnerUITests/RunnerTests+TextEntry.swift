@@ -259,6 +259,11 @@ extension RunnerTests {
       self.init(element: element, snapshot: snapshot, contentTranslation: contentTranslation)
     }
 
+    /// The same read under another handle that names the same element.
+    func rebound(to handle: XCUIElement) -> ResolvedTextEntryInput {
+      ResolvedTextEntryInput(element: handle, snapshot: snapshot, contentTranslation: contentTranslation)
+    }
+
     var identity: TextEntryInputIdentity? {
       snapshot.map { TextEntryInputIdentity(elementType: $0.elementType, identifier: $0.identifier) }
     }
