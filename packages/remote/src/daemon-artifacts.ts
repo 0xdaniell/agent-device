@@ -61,6 +61,7 @@ export async function prepareRemoteRequestArtifacts(
 
   assertRemoteDaemonSupportsSaveScript(req);
   flags = applyRemoteArtifactCommand(req, positionals, flags, clientArtifactPaths, host);
+  recordBatchScreenshotPaths(req, clientArtifactPaths, host);
   const remoteInstallSource = await prepareRemoteInstallSource(
     req,
     info,
@@ -166,6 +167,38 @@ function applyRemoteArtifactCommand(
   );
   clientArtifactPaths[remoteArtifact.field] = remoteArtifact.localPath;
   return nextFlags;
+}
+
+/**
+ * A remote `batch` runs each step on the daemon host, so a screenshot step's path names a file the
+ * caller can never read. The daemon already registers each step's capture as a downloadable
+ * artifact on that step's result; this records where the caller wanted each one, keyed by step, so
+ * `materializeRemoteArtifacts` can download it there, as it does for a lone `screenshot`.
+ */
+function recordBatchScreenshotPaths(
+  req: Omit<DaemonWireRequest, 'token'>,
+  clientArtifactPaths: Record<string, string>,
+  host: HostEnvironment,
+): void {
+  if (req.command !== 'batch' || !Array.isArray(req.flags?.batchSteps)) return;
+  req.flags.batchSteps.forEach((step, index) => {
+    // Same normalization as the daemon's batch policy, without importing the registry into this
+    // eager CLI module.
+    if (typeof step?.command !== 'string' || step.command.trim().toLowerCase() !== 'screenshot') {
+      return;
+    }
+    const stepNumber = index + 1;
+    const requested = step.positionals?.[0] ?? step.flags?.out ?? step.input?.path;
+    clientArtifactPaths[batchStepArtifactKey(stepNumber, 'path')] = resolveAbsoluteClientPath(
+      hasNonEmptyString(requested) ? requested : `screenshot-${Date.now()}-${stepNumber}.png`,
+      req.meta?.cwd,
+      host,
+    );
+  });
+}
+
+function batchStepArtifactKey(stepNumber: number, field: string): string {
+  return `batch:${stepNumber}:${field}`;
 }
 
 function applyRemoteArtifactFlag(
@@ -426,16 +459,74 @@ export async function materializeRemoteArtifacts(
   response: Extract<DaemonResponse, { ok: true }>,
   host: HostEnvironment,
 ): Promise<DaemonResponse> {
-  const artifacts = Array.isArray(response.data?.artifacts) ? response.data.artifacts : [];
-  if (artifacts.length === 0 || !info.baseUrl) return response;
-  const nextData = response.data ? { ...response.data } : {};
+  if (!info.baseUrl || !response.data) return response;
+  const endpoint = { baseUrl: info.baseUrl, token: info.token };
+  let nextData = await materializeArtifactList(
+    endpoint,
+    req,
+    response.data,
+    (field) => req.meta?.clientArtifactPaths?.[field],
+    host,
+  );
+  const results = nextData.results;
+  if (Array.isArray(results) && results.some(hasStepArtifacts)) {
+    const nextResults: unknown[] = [];
+    for (const result of results) {
+      if (!hasStepArtifacts(result)) {
+        nextResults.push(result);
+        continue;
+      }
+      const stepNumber = typeof result.step === 'number' ? result.step : undefined;
+      const stepData = await materializeArtifactList(
+        endpoint,
+        req,
+        result.data,
+        (field) =>
+          stepNumber === undefined
+            ? undefined
+            : req.meta?.clientArtifactPaths?.[batchStepArtifactKey(stepNumber, field)],
+        host,
+        // A batch prints each step from its message, which names the daemon-host path.
+        { rewriteMessage: true },
+      );
+      nextResults.push({ ...result, data: stepData });
+    }
+    nextData = { ...nextData, results: nextResults };
+  }
+  return nextData === response.data ? response : { ok: true, data: nextData };
+}
+
+type StepWithArtifacts = {
+  step?: unknown;
+  data: Record<string, unknown> & { artifacts: unknown[] };
+};
+
+function hasStepArtifacts(result: unknown): result is StepWithArtifacts {
+  if (!result || typeof result !== 'object') return false;
+  const data = (result as { data?: unknown }).data;
+  return (
+    !!data && typeof data === 'object' && Array.isArray((data as { artifacts?: unknown }).artifacts)
+  );
+}
+
+async function materializeArtifactList<T extends Record<string, unknown>>(
+  info: { baseUrl: string; token: string },
+  req: DaemonWireRequest,
+  data: T,
+  requestedPathFor: (field: string) => string | undefined,
+  host: HostEnvironment,
+  options: { rewriteMessage?: boolean } = {},
+): Promise<T> {
+  const artifacts = Array.isArray(data.artifacts) ? (data.artifacts as DaemonArtifact[]) : [];
+  if (artifacts.length === 0) return data;
+  const nextData: Record<string, unknown> = { ...data };
   const nextArtifacts: DaemonArtifact[] = [];
   for (const artifact of artifacts) {
     if (!artifact || typeof artifact !== 'object' || typeof artifact.artifactId !== 'string') {
       nextArtifacts.push(artifact);
       continue;
     }
-    const downloadPath = resolveMaterializedArtifactPath(artifact, req, host);
+    const downloadPath = resolveMaterializedArtifactPath(artifact, req, requestedPathFor, host);
     const materializedPath = await downloadRemoteArtifact({
       baseUrl: info.baseUrl,
       token: info.token,
@@ -448,6 +539,14 @@ export async function materializeRemoteArtifacts(
       // `downloadRemoteArtifact`).
       isDirectory: artifact.artifactType === 'test-artifacts',
     });
+    const remotePath = nextData[artifact.field];
+    if (
+      options.rewriteMessage &&
+      typeof nextData.message === 'string' &&
+      hasNonEmptyString(remotePath)
+    ) {
+      nextData.message = nextData.message.split(remotePath).join(materializedPath);
+    }
     // Directory artifacts download into a caller-owned root, then atomically publish their one
     // top-level entry beneath it. Use the path the download actually published rather than the
     // root hint sent over the wire; otherwise `artifactsDir` loses its suite invocation segment.
@@ -458,18 +557,19 @@ export async function materializeRemoteArtifacts(
     });
   }
   nextData.artifacts = nextArtifacts;
-  return { ok: true, data: nextData };
+  return nextData as T;
 }
 
 function resolveMaterializedArtifactPath(
   artifact: DaemonArtifact,
   req: DaemonWireRequest,
+  requestedPathFor: (field: string) => string | undefined,
   host: HostEnvironment,
 ): string {
   if (artifact.localPath && artifact.localPath.trim().length > 0) {
     return artifact.localPath;
   }
-  const requestedPath = req.meta?.clientArtifactPaths?.[artifact.field];
+  const requestedPath = requestedPathFor(artifact.field);
   if (requestedPath && requestedPath.trim().length > 0) {
     return requestedPath;
   }

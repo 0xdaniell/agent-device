@@ -148,8 +148,8 @@
     "packages/remote/src/daemon-artifacts.ts#buildDaemonArtifactUrl": "sha256:06dcde057809b507f70f7bb5cdef9bde6515be84b67e45865cf19e70b8636208",
     "packages/remote/src/daemon-artifacts.ts#downloadRemoteArtifact": "sha256:f3ab09ce387577073ecc5bcd2528963e45f91b2c1e4cc57847c3e2732ccbb300",
     "packages/remote/src/daemon-artifacts.ts#isRemoteDaemon": "sha256:0f6a714c5f60ce4e8548d811b516d8b6241eca9f7e5414733732da395b8a00e7",
-    "packages/remote/src/daemon-artifacts.ts#materializeRemoteArtifacts": "sha256:fffe8ce578e8bcdea175d6a200bea364ffce0956c2cba65bea48d72c0aaea375",
-    "packages/remote/src/daemon-artifacts.ts#resolveMaterializedArtifactPath": "sha256:0cb422301edef0545615b0f3acb3d80280213921cab2eb529715260ff0fa3647",
+    "packages/remote/src/daemon-artifacts.ts#materializeRemoteArtifacts": "sha256:b0340ac68888849f08c52a98df3cea73129e61bd98d154d670e521362e7ba06e",
+    "packages/remote/src/daemon-artifacts.ts#resolveMaterializedArtifactPath": "sha256:84446499da11a86d05af6979eae96004de3aed25e50a43b0cac69ffd4f0f5d71",
     "packages/remote/src/remote-request-diagnostics.ts#RemoteDaemonErrorPayload": "sha256:8fbcbcdf4bae7b66a08e465a72593794f36364759f18f1a814cd39dfdb76f309",
     "packages/remote/src/remote-request-diagnostics.ts#RemoteDiagnosticsEndpoint": "sha256:c1d5fe2fe90c425502cf8b7c87d6606374d6af65b4e9faf942a416f683930bdc",
     "packages/remote/src/remote-request-diagnostics.ts#buildRemoteRequestDiagnosticsUrl": "sha256:30a1a9bf0df24d3564a616699916a3bb4360c2b4d21c4ad0562fb0c1e738d0a9",
@@ -217,8 +217,8 @@
     },
     {
       "declaration": "packages/remote/src/daemon-artifacts.ts#materializeRemoteArtifacts",
-      "digest": "sha256:fffe8ce578e8bcdea175d6a200bea364ffce0956c2cba65bea48d72c0aaea375",
-      "rationale": "#2246 passes isDirectory only for the new test-artifacts type and uses the exact path the client materializer published. Existing screenshot and recording artifacts still report their requested file path; only the new directory response gains its suite-invocation segment. The signature also names the client request as DaemonWireRequest and the response as the kernel DaemonResponse instead of the daemon package aliases; only compile-time type names moved. The function now takes the client host as a parameter and resolves a relative local path against its working directory instead of the process's; the client binds the same directory, so nothing a peer parses moves."
+      "digest": "sha256:b0340ac68888849f08c52a98df3cea73129e61bd98d154d670e521362e7ba06e",
+      "rationale": "A remote batch's screenshot steps now download too: the materializer also walks data.results[] and downloads each step's data.artifacts entry, to the caller path recorded under the client-only clientArtifactPaths key 'batch:<step>:<field>', and rewrites that step's path and message to the local file. The daemon already registered those step artifacts and served them over the unchanged GET /artifacts/:id route; a released client simply never fetched them. A released daemon sends the same batch response, and a response without step artifacts is returned unchanged, so no peer parses anything new. Earlier: #2246 passes isDirectory only for the new test-artifacts type and uses the exact path the client materializer published. Existing screenshot and recording artifacts still report their requested file path; only the new directory response gains its suite-invocation segment. The signature also names the client request as DaemonWireRequest and the response as the kernel DaemonResponse instead of the daemon package aliases; only compile-time type names moved. The function now takes the client host as a parameter and resolves a relative local path against its working directory instead of the process's; the client binds the same directory, so nothing a peer parses moves."
     },
     {
       "declaration": "packages/daemon-client/src/daemon-client-rpc.ts#buildHttpRpcPayload",
@@ -482,8 +482,8 @@
     },
     {
       "declaration": "packages/remote/src/daemon-artifacts.ts#resolveMaterializedArtifactPath",
-      "digest": "sha256:0cb422301edef0545615b0f3acb3d80280213921cab2eb529715260ff0fa3647",
-      "rationale": "The client names its request as DaemonWireRequest (packages/contracts/src/daemon-wire-request.ts, a narrowing of the listed kernel DaemonRequest) and its response as the kernel DaemonResponse, instead of the daemon package's DaemonRequest/DaemonResponse aliases, so the daemon package is no longer a client import. The declaration's serialized fields, method names and framing are unchanged; only the compile-time type names in its signature moved, so a peer on protocol 2 parses exactly what it did. The function now takes the client host as a parameter and resolves a relative local path against its working directory instead of the process's; the client binds the same directory, so nothing a peer parses moves."
+      "digest": "sha256:84446499da11a86d05af6979eae96004de3aed25e50a43b0cac69ffd4f0f5d71",
+      "rationale": "Takes the caller-path lookup as a parameter so a batch step's artifact resolves through its 'batch:<step>:<field>' key while a lone command keeps its field key. The artifact's own localPath still wins, then the requested path, then the fallback name; nothing sent to or read from the daemon changes. Earlier: The client names its request as DaemonWireRequest (packages/contracts/src/daemon-wire-request.ts, a narrowing of the listed kernel DaemonRequest) and its response as the kernel DaemonResponse, instead of the daemon package's DaemonRequest/DaemonResponse aliases, so the daemon package is no longer a client import. The declaration's serialized fields, method names and framing are unchanged; only the compile-time type names in its signature moved, so a peer on protocol 2 parses exactly what it did. The function now takes the client host as a parameter and resolves a relative local path against its working directory instead of the process's; the client binds the same directory, so nothing a peer parses moves."
     },
     {
       "declaration": "packages/daemon/src/server/http-errors.ts#statusCodeForNormalizedError",
