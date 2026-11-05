@@ -239,6 +239,38 @@ extension RunnerTests {
     XCTAssertTrue(try execute(command: type).ok)
     XCTAssertEqual(field.value as? String, "must-not-type")
   }
+
+  /// The one-listing probe must find what one query per input type found, in the same order, with
+  /// handles bound to the same per-type query and index.
+  func testTextInputProbeMatchesOneQueryPerType() throws {
+    app.launchArguments = ["--agent-device-text-entry-regression"]
+    app.launch()
+    defer { app.terminate() }
+    XCTAssertTrue(app.textFields["agent-device-hardware-keyboard-input"].waitForFixtureExistence(timeout: appExistenceTimeout))
+    var perType: [(type: XCUIElement.ElementType, index: Int, snapshot: XCUIElementSnapshot)] = []
+    for type in Self.textInputProbeTypes {
+      for (index, element) in app.descendants(matching: type).allElementsBoundByIndex.enumerated() {
+        perType.append((type, index, try element.snapshot()))
+      }
+    }
+    XCTAssertFalse(perType.isEmpty, "the fixture must show text inputs")
+    var points = perType.map { CGPoint(x: $0.snapshot.frame.midX, y: $0.snapshot.frame.midY) }
+    points.append(CGPoint(x: 1, y: 1))
+    for point in points {
+      let expected = perType
+        .filter { isCoordinateTextInputCandidate(enabled: $0.snapshot.isEnabled, frame: $0.snapshot.frame, point: point) }
+        .sorted { smallestElementFirst($0.snapshot, $1.snapshot) }
+      let found = try textInputCandidatesAt(app: app, point: point, contentTranslation: .none)
+      XCTAssertEqual(found.count, expected.count, "inputs under \(point)")
+      for (input, reference) in zip(found, expected) {
+        XCTAssertEqual(input.attributes.elementType, reference.type)
+        XCTAssertEqual(input.attributes.identifier, reference.snapshot.identifier)
+        XCTAssertEqual(input.attributes.frame, reference.snapshot.frame)
+        let bound = app.descendants(matching: reference.type).element(boundBy: reference.index)
+        XCTAssertEqual(input.element.debugDescription, bound.debugDescription, "handle under \(point)")
+      }
+    }
+  }
 #endif
 }
 
