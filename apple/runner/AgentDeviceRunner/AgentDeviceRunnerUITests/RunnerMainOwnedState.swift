@@ -8,7 +8,9 @@ final class RunnerMainOwnedState {
   var bundleId: String?
   var processIdentifier: Int?
   var accessibilityHealth: RunnerAccessibilityHealth = .unknown
-  var needsPostSnapshotInteractionDelay = false
+  /// Uptime before which no interaction may start, stamped when a snapshot completes; nil when no
+  /// snapshot is waiting to be settled.
+  var postSnapshotInteractionReadyUptime: TimeInterval?
   /// The device's only screen in portrait points, kept for the rest of the command after its first
   /// successful read. Each command reads it again, because display scaling can change it while the
   /// runner runs; orientation is applied per gesture.
