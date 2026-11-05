@@ -507,9 +507,9 @@ extension RunnerTests {
 
   @MainActor
   func applyInteractionStabilizationIfNeeded() {
-    if mainOwned.needsPostSnapshotInteractionDelay {
-      sleepFor(postSnapshotInteractionDelay)
-      mainOwned.needsPostSnapshotInteractionDelay = false
+    if let readyUptime = mainOwned.postSnapshotInteractionReadyUptime {
+      sleepFor(readyUptime - ProcessInfo.processInfo.systemUptime)
+      mainOwned.postSnapshotInteractionReadyUptime = nil
     }
     if let window = firstInteractionWindow {
       sleepFor(window.readyUptime - ProcessInfo.processInfo.systemUptime)

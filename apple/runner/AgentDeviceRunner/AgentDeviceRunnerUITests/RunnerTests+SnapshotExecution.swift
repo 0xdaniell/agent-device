@@ -167,7 +167,10 @@ extension RunnerTests {
         timeout: 1,
         timeoutError: Self.mainThreadExecutionTimeoutError
       ) {
-        self.mainOwned.needsPostSnapshotInteractionDelay = true
+        // Measured from the snapshot, so the time the caller spends getting back to us counts
+        // towards the settle instead of being charged again at the interaction.
+        self.mainOwned.postSnapshotInteractionReadyUptime =
+          ProcessInfo.processInfo.systemUptime + self.postSnapshotInteractionDelay
       }
     } catch {
       NSLog("AGENT_DEVICE_RUNNER_POST_SNAPSHOT_DELAY_MARK_FAILED=%@", String(describing: error))

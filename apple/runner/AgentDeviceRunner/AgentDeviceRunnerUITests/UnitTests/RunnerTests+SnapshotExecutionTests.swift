@@ -8,7 +8,7 @@ extension RunnerTests {
     defer {
       abandonedMainThreadWorkCount = 0
       MainActor.assumeIsolated {
-        mainOwned.needsPostSnapshotInteractionDelay = false
+        mainOwned.postSnapshotInteractionReadyUptime = nil
       }
     }
 
@@ -24,7 +24,7 @@ extension RunnerTests {
     mainThreadWorkLock.unlock()
     XCTAssertEqual(abandonedWorkCount, 1, "the skipped mark must not add an abandoned unit")
     MainActor.assumeIsolated {
-      XCTAssertFalse(mainOwned.needsPostSnapshotInteractionDelay)
+      XCTAssertNil(mainOwned.postSnapshotInteractionReadyUptime)
     }
   }
 
