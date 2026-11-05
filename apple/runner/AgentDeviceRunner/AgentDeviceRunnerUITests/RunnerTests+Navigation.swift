@@ -53,8 +53,15 @@ extension RunnerTests {
       // overlay keeps the element tap, which aims at the point XCTest computed. `isHittable` is the
       // gate the dropped pre-event wait would repeat; the post-event wait stays, so `back` still
       // returns once the pop it started has settled (#2546).
-      withBoundedInteractionIdleTimeoutIfSupported(app, waits: .preEventSkipped) {
+      let t0 = ProcessInfo.processInfo.systemUptime
+      if adLaneBase("C") {
         back.tap()
+        adLaneMark("backTap.base", t0)
+      } else {
+        withBoundedInteractionIdleTimeoutIfSupported(app, waits: .preEventSkipped) {
+          back.tap()
+        }
+        adLaneMark("backTap.cand", t0)
       }
       return .performed
     }

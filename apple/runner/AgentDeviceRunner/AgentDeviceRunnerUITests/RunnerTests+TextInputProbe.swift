@@ -99,6 +99,8 @@ extension RunnerTests {
   }
 
   func probeTextInputs(app: XCUIApplication, point: CGPoint, contentTranslation: TextEntryContentTranslation) throws -> TextInputProbeOutcome {
+    let tp = ProcessInfo.processInfo.systemUptime
+    defer { adLaneMark("probeTextInputs", tp) }
     let queries = try textInputQueries(app: app)
     switch containingTextInputProbeIssues(fallback: TextInputProbeOutcome.unavailable(.emptyTree), { shouldStop in
       var treeReadable = app.descendants(matching: .any).firstMatch.exists
@@ -192,7 +194,9 @@ extension RunnerTests {
     var inputs: [ResolvedTextEntryInput] = []
     for query in queries {
       if shouldStop() { break }
+      let tq = ProcessInfo.processInfo.systemUptime
       let candidates = query.allElementsBoundByIndex
+      adLaneMark("probeQuery n=\(candidates.count)", tq)
 #if AGENT_DEVICE_RUNNER_UNIT_TESTS
       if let issue = textInputProbeIssueForTesting {
         textInputProbeIssueForTesting = nil
